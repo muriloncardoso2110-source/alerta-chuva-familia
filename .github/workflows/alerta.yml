@@ -1,0 +1,73 @@
+
+name: Alerta de Chuva Familia
+
+on:
+  schedule:
+    # A cada 10 minutos (horario UTC)
+    - cron: "3,13,23,33,43,53 * * * *"
+
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Escolha o tipo de execucao"
+        required: true
+        default: "teste"
+        type: choice
+        options:
+          - teste
+          - resumo
+          - automatico
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alerta-chuva-familia
+  cancel-in-progress: false
+
+jobs:
+  monitorar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar arquivos
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Executar alerta
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MODO: ${{ inputs.modo }}
+          EVENTO: ${{ github.event_name }}
+        run: |
+          if [ "$EVENTO" = "schedule" ]; then
+            MODO="automatico"
+          fi
+
+          if [ -z "$MODO" ]; then
+            MODO="automatico"
+          fi
+
+          python alerta_chuva.py "$MODO"
+
+      - name: Salvar historico de alertas
+        run: |
+          if [ -f estado.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email \
+              "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add -f estado.json
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Atualizar historico de alertas"
+              git push
+            fi
+          fi
